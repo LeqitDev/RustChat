@@ -7,6 +7,10 @@ pub enum Type {
     SendTo,
     ConnectSuccess,
     Disconnect,
+    DisconnectSuccess,
+    SendToSuccess,
+    SendToFailed,
+    EncryptedMessage,
 }
 
 impl From<u8> for Type {
@@ -19,6 +23,10 @@ impl From<u8> for Type {
             4 => Type::SendTo,
             5 => Type::ConnectSuccess,
             6 => Type::Disconnect,
+            7 => Type::DisconnectSuccess,
+            8 => Type::SendToSuccess,
+            9 => Type::SendToFailed,
+            10 => Type::EncryptedMessage,
             _ => panic!("Invalid value for MsgType: {}", n),
         }
     }

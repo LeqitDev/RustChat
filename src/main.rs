@@ -13,12 +13,12 @@ mod msg_types;
 fn main() {
     let (sender, receiver) = mpsc::channel::<String>();
 
+    // start client on second thread
     let client = thread::spawn(move || {
         udp_client(receiver);
-        // run_client(receiver);
     });
 
-    thread::sleep(time::Duration::from_millis(50));
+    // start cmd application
     println!("Welcome to RustChat!");
 
     loop {
@@ -34,12 +34,14 @@ fn main() {
 
         match command {
             "stop" => {
+                // disconnect from server and stop client thread
                 sender.send("stop".to_string()).unwrap();
                 println!("Disconnecting...");
                 client.join().unwrap();
                 break;
             },
             "send" => {
+                // tell the client thread to send args to server
                 sender.send(format!("send!::!{}", args.join(" "))).unwrap();
             }
             _ => println!("Unknown command")
@@ -50,13 +52,14 @@ fn main() {
 fn udp_client(receiver: Receiver<String>) {
     let mut rng = rand::thread_rng();
     let port = rng.gen_range(1025..65535);
-    let udp_sock = UdpSocket::bind(format!("127.0.0.1:{}", port)).unwrap();
-    udp_sock.connect("127.0.0.1:9191").unwrap();
-    udp_sock.set_nonblocking(true).expect("Failed to enter non-blocking mode");
+    let udp_sock = UdpSocket::bind(format!("127.0.0.1:{}", port)).unwrap(); // start client socket on random port
+    udp_sock.connect("127.0.0.1:9191").unwrap(); // try to connect to server
+    udp_sock.set_nonblocking(true).expect("Failed to enter non-blocking mode"); // dont block the loop
     let mut connected = false;
-    write(&udp_sock, "", Type::Connect);
+    write(&udp_sock, "", Type::Connect); // connect on the server
 
     loop {
+        // for the following code see https://github.com/LeqitDev/RustChat/blob/server/src/chat_server.rs#L23
         let mut buffer = vec![0; 4096];
         match udp_sock.recv(&mut buffer) {
             Ok(len) => {
@@ -65,8 +68,8 @@ fn udp_client(receiver: Receiver<String>) {
                     if is_msg_valid(raw_msg) {
                         let (msg_type, msg) = deconstruct_msg(raw_msg);
                         match msg_type {
-                            Type::ConnectSuccess => connected = true,
-                            Type::Broadcast => println!("!!BROADCAST!!: {}", msg),
+                            Type::ConnectSuccess => connected = true, // client is connected
+                            Type::Broadcast => println!("!!BROADCAST!!: {}", msg), // broadcast msg from the server print it TODO: do something
                             _ => (),
                         }
                     }
@@ -84,7 +87,9 @@ fn udp_client(receiver: Receiver<String>) {
                     let args = &tokens[1..];
                     match command {
                         "send" => {
+                            // look if the client is connected to the server
                             if connected {
+                                // connected: send the message
                                 println!("Sending: {}", args[0]);
                                 write(&udp_sock, args[0], Type::Broadcast);
                             } else {
@@ -92,7 +97,29 @@ fn udp_client(receiver: Receiver<String>) {
                             }
                         },
                         "stop" => {
+                            // send disconnecting message to server
                             write(&udp_sock, "", Type::Disconnect);
+                            udp_sock.set_nonblocking(false).unwrap(); // Wait for server response
+                            match udp_sock.recv(&mut buffer) {
+                                Ok(len) => {
+                                    if len == 9 {
+                                        let raw_msg = &buffer[..len];
+                                        if is_msg_valid(raw_msg) {
+                                            let (msg_type, _msg) = deconstruct_msg(raw_msg);
+                                            match msg_type {
+                                                Type::DisconnectSuccess => println!("Disconnected!"), // Server disconnected the client properly
+                                                _ => println!("Forcing disconnect!"),
+                                            }
+                                        } else {
+                                            println!("Forcing disconnect!");
+                                        }
+                                    } else {
+                                        println!("Forcing disconnect!");
+                                    }
+                                },
+                                Err(ref e) if e.kind() == ErrorKind::WouldBlock => (),
+                                Err(e) => eprintln!("Error on receiving data: {}", e),
+                            }
                             break;
                         },
                         _ => {
@@ -106,6 +133,7 @@ fn udp_client(receiver: Receiver<String>) {
     }
 }
 
+// check https://github.com/LeqitDev/RustChat/blob/server/src/server_utils.rs#L18
 fn create_checksum_str(msg: &str) -> u64 {
     return crc64::crc64(1892763397649723641, msg.as_bytes());
 }
@@ -114,6 +142,7 @@ fn create_checksum(msg: &[u8]) -> u64 {
     return crc64::crc64(1892763397649723641, msg);
 }
 
+// check https://github.com/LeqitDev/RustChat/blob/server/src/chat_server.rs#L64
 fn is_msg_valid(msg: &[u8]) -> bool {
     let msg_checksum = u64::from_ne_bytes(msg[1..9].try_into().unwrap());
     let msg = &msg[9..msg.len()];
@@ -127,6 +156,7 @@ fn deconstruct_msg(msg: &[u8]) -> (Type, &str) {
     (msg_type, msg_str)
 }
 
+// check https://github.com/LeqitDev/RustChat/blob/server/src/server_utils.rs#L5
 fn write(sock: &UdpSocket, msg_str: &str, msg_type: Type) {
     let msg_type: u8 = msg_type as u8;
     let msg_checksum: u64 = create_checksum_str(msg_str);
