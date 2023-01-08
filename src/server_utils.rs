@@ -23,3 +23,50 @@ pub fn create_checksum_str(msg: &str) -> u64 {
 pub fn create_checksum(msg: &[u8]) -> u64 {
     return crc64::crc64(1892763397649723641, msg);
 }
+
+// server log
+pub struct Logger {
+    pub log: Vec<String>,
+    pub print: bool,
+}
+
+impl Logger {
+    pub fn log(&mut self, s: String) {
+        if self.print {
+            self.add_to_last(s);
+        } else {
+            self.log.push(s);
+        }
+        self.print = true;
+    }
+
+    fn add_to_last(&mut self, s:String) {
+        let len = self.log.len();
+        if let Some(last) = self.log.get_mut(len - 1) {
+            last.push_str(s.as_str());
+        }
+    }
+
+    pub fn logln(&mut self, s: String) {
+        if self.print {
+            self.add_to_last(s);
+        } else {
+            self.log.push(s);
+        }
+        self.print = false;
+    }
+
+    pub fn mode_println(&mut self, s: String, b: bool) {
+        if b {
+            println!("{}", s);
+        }
+        self.logln(s);
+    }
+
+    pub fn mode_print(&mut self, s: String, b: bool) {
+        if b {
+            print!("{}", s);
+        }
+        self.log(s);
+    }
+}

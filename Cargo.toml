@@ -7,4 +7,6 @@ edition = "2021"
 
 [dependencies]
 crc64 = "2.0.0"
-tokio = "1.24.1"
+pocketbase-sdk = "0.0.7"
+tokio = { version = "1.24.1", features = ["full"] }
+winconsole = "0.11.1"

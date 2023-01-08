@@ -1,25 +1,54 @@
-use std::{sync::{atomic::AtomicBool, Arc}, net::UdpSocket, str::from_utf8, io::ErrorKind};
+use core::time;
+use std::{sync::mpsc::Receiver, net::UdpSocket, str::from_utf8, io::ErrorKind, vec};
 
-use crate::msg_types::Type;
+use crate::{msg_types::Type};
 use crate::client_handler::Client;
 use crate::server_utils;
 
 // Packet: (u8 checksum | u64 checksum) | msg
 
-pub fn start_server(stop: Arc<AtomicBool>) {
+pub fn start_server(receiver: Receiver<String>) {
     // Set server ip
     let udp_sock = UdpSocket::bind("127.0.0.1:9191").unwrap();
     // Incoming messages should not block the loop
     udp_sock.set_nonblocking(true).expect("Failed to enter non-blocking mode");
     // store all active connections
     let mut connections: Vec<Client> = Vec::new();
+    // log server messages
+    let mut server_log = server_utils::Logger {log: vec![], print: false};
+    let mut server_mode = false;
+
+    server_log.mode_println("Server started!".to_string(), server_mode);
 
     loop {
-        // If server should stop 
-        if stop.load(std::sync::atomic::Ordering::SeqCst) {
-            // break the loop
-            break;
+        match receiver.recv_timeout(time::Duration::from_millis(5)) {
+            Ok(string) => {
+                if !string.is_empty() {
+                    match string.as_str() {
+                        "stop" => {
+                            // If server should stop
+                            for conn in connections {
+                                server_utils::write(&udp_sock, "", Type::Disconnect, conn.addr);
+                            }
+                            break;
+                        },
+                        "serverlogs" => {
+                            // show/hide serverlogs
+                            server_mode = !server_mode;
+                            if server_mode {
+                                winconsole::console::clear().unwrap();
+                                for line in &server_log.log {
+                                    println!("{}", *line);
+                                }
+                            }
+                        },
+                        _ => (),
+                    }
+                }
+            },
+            Err(_) => (),
         }
+
         // Buffer with at least 4096 bytes
         let mut buffer = vec![0; 4096];
         // fetch incoming messages
@@ -33,10 +62,12 @@ pub fn start_server(stop: Arc<AtomicBool>) {
 
                         match msg_type {
                             Type::Connect => { // client wants to connect to server
+                                server_log.mode_println(format!("Client {} connected!", addr), server_mode);
                                 connections.push(Client {addr, client_id: 123}); // create new client entity with TODO: random client id
                                 server_utils::write(&udp_sock, "", Type::ConnectSuccess, addr); // Write to the client that connection has been established
                             }, // add client to active connections
                             Type::Disconnect => {
+                                server_log.mode_println(format!("Client {} disconnected!", addr), server_mode);
                                 let index = connections.iter().position(|x| x.addr == addr).unwrap(); // find index of client entity with the exact addr
                                 connections.swap_remove(index); // fill the hole with the last element in the array
                                 server_utils::write(&udp_sock, "", Type::DisconnectSuccess, addr); // write to the client that the disconnection was successful
@@ -70,9 +101,15 @@ fn is_msg_valid(msg: &[u8]) -> bool {
 
 // split header from message return message type and message string
 // TODO: Schould return message as byte bc of encrypted message
-fn deconstruct_msg(msg: &[u8]) -> (Type, &str) {
+fn deconstruct_msg_str(msg: &[u8]) -> (Type, &str) {
     let msg_type: Type = msg[0].into();
     let msg = &msg[9..];
     let msg_str = from_utf8(msg).unwrap();
     (msg_type, msg_str)
+}
+
+fn deconstruct_msg(msg: &[u8]) -> (Type, &[u8]) {
+    let msg_type: Type = msg[0].into();
+    let msg = &msg[9..];
+    (msg_type, msg)
 }
