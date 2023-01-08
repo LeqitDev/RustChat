@@ -596,6 +596,7 @@ version = "0.1.0"
 dependencies = [
  "crc64",
  "pocketbase-sdk",
+ "serde",
  "tokio",
  "winconsole",
 ]

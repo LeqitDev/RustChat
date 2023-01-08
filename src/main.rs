@@ -13,7 +13,7 @@ fn main() {
 
     // run server on second thread
     let server = thread::spawn(move || {
-        chat_server::start_server(rx);
+        tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap().block_on(chat_server::start_server(rx));
     });
     /* let server = thread::spawn(move || {
         chat_server::start_server(rx).await;

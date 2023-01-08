@@ -1,13 +1,23 @@
 use core::time;
 use std::{sync::mpsc::Receiver, net::UdpSocket, str::from_utf8, io::ErrorKind, vec};
+use pocketbase_sdk::{client, user::UserTypes, records::operations::{list, view}};
+use serde::{Serialize, Deserialize};
 
 use crate::{msg_types::Type};
 use crate::client_handler::Client;
 use crate::server_utils;
 
+#[derive(Serialize, Deserialize, Debug)]
+struct Test {
+    id: String,
+    texts: String,
+    created: String,
+    updated: String,
+}
+
 // Packet: (u8 checksum | u64 checksum) | msg
 
-pub fn start_server(receiver: Receiver<String>) {
+pub async fn start_server(receiver: Receiver<String>) {
     // Set server ip
     let udp_sock = UdpSocket::bind("127.0.0.1:9191").unwrap();
     // Incoming messages should not block the loop
@@ -17,6 +27,20 @@ pub fn start_server(receiver: Receiver<String>) {
     // log server messages
     let mut server_log = server_utils::Logger {log: vec![], print: false};
     let mut server_mode = false;
+
+    let mut client = client::Client::new("http://localhost:8090/api/").unwrap();
+    let auth = client.auth_via_email(
+        String::from("markus.hamacher16@gmail.com"),
+        String::from("ytd4xzh*cxr@RZA-ydv"),
+        UserTypes::Admin /* use UserTypes::Admin for admin Authentication */
+    ).await;
+    assert!(auth.is_ok());
+
+    let response = view::record::<Test>("test", "immi0lhjyil21pc", &client).await.unwrap();
+    match response {
+        view::ViewResponse::ErrorResponse(e) => eprintln!("Something went wrong: {:?}", e),
+        view::ViewResponse::SuccessResponse(rec) => println!("{:#?}", rec),
+    }
 
     server_log.mode_println("Server started!".to_string(), server_mode);
 
